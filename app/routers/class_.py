@@ -4,6 +4,9 @@ from typing import List
 from fastapi import APIRouter
 from sqlalchemy import select, insert, update, delete
 
+from app.core.logger import logger
+from app.core.redis import redis_cache, key_builder
+from app.core.db.session import AsyncScopedSession
 from app.core.db.session import AsyncScopedSession
 from app.models.schemas.common import BaseResponse, HttpResponse
 from app.models.schemas.class_ import (
@@ -48,9 +51,18 @@ async def create_class(
 
 @router.get("/list", response_model=BaseResponse[List[ClassResp]])
 async def read_class_list() -> BaseResponse[List[ClassResp]]:
-    async with AsyncScopedSession() as session:
-        stmt = select(Class)
-        result = (await session.execute(stmt)).scalars().all()
+    _key = key_builder("read_class_list")
+
+    if await redis_cache.exists(_key):
+        result = await redis_cache.get(_key)
+        logger.debug(f"Cache hit: {_key}")
+    else:
+        logger.debug("Cache miss")
+        async with AsyncScopedSession() as session:
+            stmt = select(Class)
+            result = (await session.execute(stmt)).scalars().all()
+
+            await redis_cache.set(_key, result, ttl=60)
 
     return HttpResponse(
         content=[
@@ -69,9 +81,17 @@ async def read_class_list() -> BaseResponse[List[ClassResp]]:
 async def read_class(
     class_id: str,
 ) -> BaseResponse[ClassResp]:
-    async with AsyncScopedSession() as session:
-        stmt = select(Class).where(Class.class_id == class_id)
-        result = (await session.execute(stmt)).scalar()
+    _key = key_builder("read_class", class_id)
+
+    if await redis_cache.get(_key):
+        logger.debug("Cache hit")
+        result = await redis_cache.get(_key)
+    else:
+        async with AsyncScopedSession() as session:
+            stmt = select(Class).where(Class.class_id == class_id)
+            result = (await session.execute(stmt)).scalar()
+
+        await redis_cache.set(_key, result, ttl=60)
 
     return HttpResponse(
         content=ClassResp(
