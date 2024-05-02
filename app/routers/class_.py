@@ -8,7 +8,6 @@ from app.core.errors import error
 from app.core.logger import logger
 from app.core.redis import redis_cache, key_builder
 from app.core.db.session import AsyncScopedSession
-from app.core.db.session import AsyncScopedSession
 from app.models.schemas.common import BaseResponse, HttpResponse, ErrorResponse
 from app.models.schemas.class_ import (
     ClassReq,
