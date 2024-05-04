@@ -1,217 +1,68 @@
-from typing import List, Optional
-
-from sqlalchemy import select, insert, update, delete, func
+from sqlalchemy import insert
 
 from app.core.logger import logger
-from app.core.redis import RedisCacheDecorator
 from app.core.errors import error
 from app.core.db.session import AsyncScopedSession
-from app.models.db.class_ import Class, ClassNotice
-from app.models.dtos.common import PageDTO
-from app.models.dtos.class_ import (
-    ClassDTO,
-    ClassNoticeDTO,
-    ClassListDTO,
-    ClassNoticeListDTO,
-)
+from app.models.db.student import Student
+from app.models.db.teacher import Teacher
+from app.models.dtos.user import UserDTO
+from app.models.constant import UserRole
 
 
-class ClassRepository:
+class UserRepository:
 
-    async def create_class(
-        self, class_id: str, class_name: str, teacher_id: str
-    ) -> ClassDTO:
+    async def create_student_user(
+        self, user_id: str, user_name: str, user_role: UserRole
+    ) -> UserDTO:
         async with AsyncScopedSession() as session:
             try:
                 stmt = (
-                    insert(Class)
+                    insert(Student)
                     .values(
-                        class_id=class_id,
-                        class_name=class_name,
-                        teacher_id=teacher_id,
+                        student_id=user_id,
+                        student_name=user_name,
                     )
-                    .returning(Class)
+                    .returning(Student)
                 )
 
-                result: Class = (await session.execute(stmt)).scalar()
+                result: Student = (await session.execute(stmt)).scalar()
                 await session.commit()
             except Exception as e:
                 logger.error(e)
                 await session.rollback()
-                raise error.ClassCreationFailed()
+                raise error.UserCreationFailed()
 
-        return ClassDTO(
-            class_id=result.class_id,
-            class_name=result.class_name,
-            teacher_id=result.teacher_id,
+        return UserDTO(
+            user_id=result.student_id,
+            user_name=result.student_name,
+            user_role=user_role.value,
             created_at=result.created_at,
         )
 
-    @RedisCacheDecorator()
-    async def read_class_list(self, page: int, limit: int) -> ClassListDTO:
-        async with AsyncScopedSession() as session:
-            stmt = (
-                select(Class, func.count().over().label("total"))
-                .limit(limit)
-                .offset((page - 1) * limit if page > 1 else 0)
-                .order_by(Class.created_at.desc())
-            )
-
-            results: List[List[Class, int]] = (await session.execute(stmt)).all()
-
-        data = []
-        page = PageDTO(page=page, limit=limit, total=0)
-
-        if results:
-            for row, total in results:
-                data.append(
-                    ClassDTO(
-                        class_id=row.class_id,
-                        class_name=row.class_name,
-                        teacher_id=row.teacher_id,
-                        created_at=row.created_at,
-                    )
-                )
-            page.total = total
-
-        return ClassListDTO(data=data, page=page)
-
-    @RedisCacheDecorator()
-    async def read_class(self, class_id: str) -> Optional[ClassDTO]:
-        async with AsyncScopedSession() as session:
-            stmt = select(Class).where(Class.class_id == class_id)
-
-            result = (await session.execute(stmt)).scalar()
-
-        if result:
-            return ClassDTO(
-                class_id=result.class_id,
-                class_name=result.class_name,
-                teacher_id=result.teacher_id,
-                created_at=result.created_at,
-            )
-        else:
-            return None
-
-    async def create_class_notice(self, class_id: str, message: str) -> ClassNoticeDTO:
+    async def create_teacher_user(
+        self, user_id: str, user_name: str, user_role: UserRole
+    ) -> UserDTO:
         async with AsyncScopedSession() as session:
             try:
                 stmt = (
-                    insert(ClassNotice)
+                    insert(Teacher)
                     .values(
-                        class_id=class_id,
-                        message=message,
+                        teacher_id=user_id,
+                        teacher_name=user_name,
                     )
-                    .returning(ClassNotice)
+                    .returning(Teacher)
                 )
 
-                result: ClassNotice = (await session.execute(stmt)).scalar()
+                result: Teacher = (await session.execute(stmt)).scalar()
                 await session.commit()
             except Exception as e:
                 logger.error(e)
                 await session.rollback()
-                raise error.ClassNoticeCreationFailed()
+                raise error.UserCreationFailed()
 
-        return ClassNoticeDTO(
-            notice_id=result.id,
-            class_id=result.class_id,
-            message=result.message,
+        return UserDTO(
+            user_id=result.teacher_id,
+            user_name=result.teacher_name_name,
+            user_role=user_role.value,
             created_at=result.created_at,
-            updated_at=result.updated_at,
         )
-
-    @RedisCacheDecorator()
-    async def read_class_notice_list(
-        self, class_id: str, page: int, limit: int
-    ) -> ClassNoticeListDTO:
-        async with AsyncScopedSession() as session:
-            stmt = (
-                select(ClassNotice, func.count().over().label("total"))
-                .where(ClassNotice.class_id == class_id)
-                .limit(limit)
-                .offset((page - 1) * limit if page > 1 else 0)
-                .order_by(ClassNotice.created_at.desc())
-            )
-
-            results: List[List[ClassNotice, int]] = (await session.execute(stmt)).all()
-
-        data = []
-        page = PageDTO(page=page, limit=limit, total=0)
-
-        if results:
-            for row, total in results:
-                data.append(
-                    ClassNoticeDTO(
-                        notice_id=row.id,
-                        class_id=row.class_id,
-                        message=row.message,
-                        created_at=row.created_at,
-                        updated_at=row.updated_at,
-                    )
-                )
-            page.total = total
-
-        return ClassNoticeListDTO(data=data, page=page)
-
-    async def update_class_notice(
-        self, class_id: str, notice_id: int, message: str
-    ) -> Optional[ClassNoticeDTO]:
-        async with AsyncScopedSession() as session:
-            try:
-                stmt = (
-                    update(ClassNotice)
-                    .where(
-                        ClassNotice.id == notice_id, ClassNotice.class_id == class_id
-                    )
-                    .values(message=message)
-                    .returning(ClassNotice)
-                )
-
-                result: ClassNotice = (await session.execute(stmt)).scalar()
-                await session.commit()
-            except Exception as e:
-                logger.error(e)
-                await session.rollback()
-                raise error.ClassNoticeUpdateFailed()
-
-        if result:
-            return ClassNoticeDTO(
-                notice_id=result.id,
-                class_id=result.class_id,
-                message=result.message,
-                created_at=result.created_at,
-                updated_at=result.updated_at,
-            )
-        else:
-            return None
-
-    async def delete_class_notice(
-        self, class_id: str, notice_id: int
-    ) -> Optional[ClassNoticeDTO]:
-        async with AsyncScopedSession() as session:
-            try:
-                stmt = (
-                    delete(ClassNotice)
-                    .where(
-                        ClassNotice.id == notice_id, ClassNotice.class_id == class_id
-                    )
-                    .returning(ClassNotice)
-                )
-                result: ClassNotice = (await session.execute(stmt)).scalar()
-                await session.commit()
-            except Exception as e:
-                logger.error(e)
-                await session.rollback()
-                raise error.ClassNoticeDeleteFailed()
-
-        if result:
-
-            return ClassNoticeDTO(
-                notice_id=result.id,
-                class_id=result.class_id,
-                message=result.message,
-                created_at=result.created_at,
-                updated_at=result.updated_at,
-            )
-        else:
-            return None
