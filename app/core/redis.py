@@ -6,6 +6,10 @@ from app.core.config import config
 
 from typing import Optional
 
+from app.core.logger import logger
+
+from functools import wraps
+
 
 class RedisCache:
     def __init__(self):
@@ -33,6 +37,32 @@ class RedisCache:
 
 def key_builder(*args) -> str:
     return ":".join(map(str, args))
+
+
+class RedisCacheDecorator:
+    def __init__(self, ttl: int = 60):
+        self.ttl = ttl
+
+    def key_builder(self, *args) -> str:
+        return ":".join(map(str, args))
+
+    def __call__(self, func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            _key = self.key_builder(func.__name__, *args, *kwargs)
+
+            if await redis_cache.exists(_key):
+                logger.debug("Cache hit")
+                result = await redis_cache.get(_key)
+            else:
+                logger.debug("Cache miss")
+                result = await func(*args, **kwargs)
+                if result:
+                    await redis_cache.set(_key, result, ttl=self.ttl)
+
+            return result
+
+        return wrapper
 
 
 redis_cache = RedisCache()
